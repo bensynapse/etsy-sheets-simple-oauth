@@ -185,6 +185,11 @@ class EtsyAPIClient:
             if response.status_code >= 400:
                 self._handle_error_response(response)
                 
+            # Handle successful responses
+            # 204 No Content is success for DELETE
+            if response.status_code == 204:
+                return None
+                
             # Return parsed response
             if response.content:
                 return response.json()

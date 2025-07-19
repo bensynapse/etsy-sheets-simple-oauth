@@ -477,35 +477,14 @@ class EtsyShopManager:
             marked_for_deletion = edited_df[edited_df['delete'] == True]
             delete_count = len(marked_for_deletion)
             
+            # Show delete button
             if st.button(f"🗑️ Delete {delete_count} Items", 
                         use_container_width=True,
-                        disabled=delete_count == 0):
+                        disabled=delete_count == 0,
+                        key="delete_button"):
                 if delete_count > 0:
-                    # Confirmation
-                    if st.checkbox("I confirm deletion is permanent", key="delete_confirm"):
-                        progress_text = st.empty()
-                        deleted = 0
-                        failed = 0
-                        
-                        for i, (_, row) in enumerate(marked_for_deletion.iterrows()):
-                            progress_text.text(f"Deleting {i+1}/{delete_count}...")
-                            try:
-                                self.listing_service.delete_listing(int(row['listing_id']))
-                                deleted += 1
-                            except Exception as e:
-                                failed += 1
-                                st.error(f"Failed to delete: {str(e)}")
-                                
-                        progress_text.empty()
-                        
-                        if deleted > 0:
-                            st.success(f"✅ Deleted {deleted} listings!")
-                            # Remove from dataframe
-                            st.session_state.uploaded_products = edited_df[edited_df['delete'] == False].reset_index(drop=True)
-                            st.rerun()
-                            
-                        if failed > 0:
-                            st.error(f"❌ Failed to delete {failed} listings")
+                    st.session_state.confirm_delete = True
+                    st.session_state.items_to_delete = marked_for_deletion.copy()
                             
         with col3:
             # Export to CSV
@@ -523,6 +502,58 @@ class EtsyShopManager:
             if st.button("🔄 Clear Table", use_container_width=True):
                 st.session_state.uploaded_products = pd.DataFrame()
                 st.rerun()
+        
+        # Show deletion confirmation dialog outside of columns
+        if st.session_state.get('confirm_delete', False) and 'items_to_delete' in st.session_state:
+            st.divider()
+            st.warning(f"⚠️ **Confirm Deletion**")
+            st.caption(f"About to permanently delete {len(st.session_state.items_to_delete)} listings")
+            
+            confirm_col1, confirm_col2, confirm_col3 = st.columns([1, 1, 2])
+            
+            with confirm_col1:
+                if st.button("✅ Yes, Delete", type="primary", use_container_width=True, key="confirm_delete_yes"):
+                    # Execute deletion
+                    progress_text = st.empty()
+                    deleted = 0
+                    failed = 0
+                    items_to_delete = st.session_state.items_to_delete
+                    
+                    for i, (_, row) in enumerate(items_to_delete.iterrows()):
+                        progress_text.text(f"Deleting {i+1}/{len(items_to_delete)}...")
+                        try:
+                            self.listing_service.delete_listing(int(row['listing_id']))
+                            deleted += 1
+                        except Exception as e:
+                            failed += 1
+                            st.error(f"Failed to delete listing {row['listing_id']}: {str(e)}")
+                            
+                    progress_text.empty()
+                    
+                    if deleted > 0:
+                        st.success(f"✅ Deleted {deleted} listings!")
+                        # Remove deleted items from the dataframe
+                        deleted_ids = items_to_delete['listing_id'].tolist()
+                        st.session_state.uploaded_products = st.session_state.uploaded_products[
+                            ~st.session_state.uploaded_products['listing_id'].isin(deleted_ids)
+                        ].reset_index(drop=True)
+                        
+                    if failed > 0:
+                        st.error(f"❌ Failed to delete {failed} listings")
+                        
+                    # Clear confirmation state
+                    st.session_state.confirm_delete = False
+                    if 'items_to_delete' in st.session_state:
+                        del st.session_state.items_to_delete
+                    time.sleep(1)
+                    st.rerun()
+            
+            with confirm_col2:
+                if st.button("❌ Cancel", use_container_width=True, key="confirm_delete_cancel"):
+                    st.session_state.confirm_delete = False
+                    if 'items_to_delete' in st.session_state:
+                        del st.session_state.items_to_delete
+                    st.rerun()
 
 
 def main():

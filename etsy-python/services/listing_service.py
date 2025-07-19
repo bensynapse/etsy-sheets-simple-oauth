@@ -214,7 +214,13 @@ class ListingService:
             listing_id: Listing identifier
         """
         logger.info(f"Deleting listing {listing_id}")
-        self.api.delete_listing(listing_id)
+        try:
+            result = self.api.delete_listing(listing_id)
+            logger.info(f"Successfully deleted listing {listing_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to delete listing {listing_id}: {str(e)}")
+            raise
         
     def get_listing_progress(self, df: pd.DataFrame) -> Dict[str, int]:
         """Get upload progress from DataFrame (getUploadProgress).
