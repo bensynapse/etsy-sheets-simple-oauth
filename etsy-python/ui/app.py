@@ -330,6 +330,7 @@ class EtsyShopManager:
                             if 'data' in result and not result['data'].empty:
                                 # Convert imported listings to match uploaded products format
                                 imported_df = result['data'].copy()
+                                
                                 imported_df['source'] = 'Import'
                                 imported_df['delete'] = False
                                 # Rename columns to match
@@ -338,8 +339,10 @@ class EtsyShopManager:
                                     'Title': 'title',
                                     'Price': 'price',
                                     'Quantity': 'quantity',
-                                    'Status': 'status'
+                                    'Status': 'status',
+                                    'SKU': 'sku'
                                 })
+                                
                                 # Add missing columns
                                 if 'sku' not in imported_df.columns:
                                     imported_df['sku'] = ''

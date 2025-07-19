@@ -51,18 +51,53 @@ class ListingService:
             if not shop_id:
                 raise Exception("No shops found. Please use 'Import Any Shop' feature instead.")
                 
-            listings = self.get_shop_listings(shop_id)
+            # Get ALL listings by paginating through results
+            all_listings = []
+            offset = 0
+            limit = 100  # Max allowed by API
             
+            while True:
+                response = self.api.get_shop_listings(shop_id, state='active', limit=limit, offset=offset)
+                if response.get('results'):
+                    all_listings.extend(response['results'])
+                    if len(response['results']) < limit:
+                        # No more pages
+                        break
+                    offset += limit
+                else:
+                    break
+                    
             # Create DataFrame
-            if listings.get('results'):
+            if all_listings:
                 data = []
-                for listing in listings['results']:
+                for listing in all_listings:
+                    # Extract SKU from inventory endpoint
+                    sku = ''
+                    try:
+                        inventory = self.api.get_listing_inventory(listing['listing_id'])
+                        
+                        if inventory and 'products' in inventory:
+                            # Get SKU from products array
+                            products = inventory['products']
+                            for product in products:
+                                # Get SKU - it's valid to have empty string SKUs in Etsy
+                                if 'sku' in product:
+                                    # Extract whatever value is there, even if empty
+                                    sku = str(product['sku']) if product['sku'] is not None else ''
+                                    break
+                        else:
+                            logger.warning(f"No inventory products found for listing {listing['listing_id']}")
+                    except Exception as e:
+                        # Log error but continue processing
+                        logger.error(f"Error fetching SKU for listing {listing['listing_id']}: {e}")
+                    
                     data.append({
                         'Listing ID': listing['listing_id'],
                         'Title': listing['title'],
                         'Price': listing['price']['amount'] / listing['price']['divisor'],
                         'Quantity': listing['quantity'],
                         'Status': listing['state'],
+                        'SKU': sku,
                         'Views': listing.get('views', 0),
                         'Created': datetime.fromtimestamp(
                             listing.get('created_timestamp', 0)
@@ -70,6 +105,10 @@ class ListingService:
                     })
                     
                 df = pd.DataFrame(data)
+                
+                # Log summary
+                non_empty_skus = df[df['SKU'] != '']['SKU'].count()
+                logger.info(f"Imported {len(df)} listings, {non_empty_skus} have SKUs")
                 
                 return {
                     'success': True,
@@ -105,6 +144,45 @@ class ListingService:
         listing = self.api.create_listing(shop_id, data)
         
         logger.info(f"Created listing {listing['listing_id']}")
+        
+        # If SKU was provided, update it via inventory (Etsy doesn't set it during creation)
+        if 'sku' in data and data['sku']:
+            try:
+                sku_value = data['sku'][0] if isinstance(data['sku'], list) else data['sku']
+                if sku_value:
+                    logger.info(f"Setting SKU '{sku_value}' via inventory update...")
+                    inventory = self.api.get_listing_inventory(listing['listing_id'])
+                    
+                    # Update SKU in first product
+                    if inventory and 'products' in inventory and inventory['products']:
+                        inventory['products'][0]['sku'] = sku_value
+                        
+                        # Prepare minimal update data - only SKU and required fields
+                        # Build offerings with minimal fields
+                        offerings = []
+                        for offering in inventory['products'][0]['offerings']:
+                            price_value = float(offering['price']['amount']) / float(offering['price']['divisor'])
+                            offerings.append({
+                                'quantity': int(offering.get('quantity', 0)),
+                                'is_enabled': bool(offering.get('is_enabled', True)),
+                                'price': price_value
+                            })
+                        
+                        update_data = {
+                            'products': [{
+                                'sku': str(sku_value),
+                                'offerings': offerings,
+                                'property_values': []  # Empty array if no variations
+                            }],
+                            'price_on_property': [],
+                            'quantity_on_property': [],
+                            'sku_on_property': []
+                        }
+                        
+                        self.api.update_listing_inventory(listing['listing_id'], update_data)
+                        logger.info(f"SKU '{sku_value}' set successfully")
+            except Exception as e:
+                logger.warning(f"Could not set SKU: {e}")
         
         return listing
         

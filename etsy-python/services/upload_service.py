@@ -55,6 +55,49 @@ class UploadService:
             if len(products) == 0:
                 raise Exception("No products found to upload")
                 
+            # Check for duplicate SKUs in upload batch
+            if 'SKU' in products.columns:
+                skus = products[products['SKU'].notna() & (products['SKU'] != '')]['SKU']
+                if not skus.empty:
+                    duplicate_skus = skus[skus.duplicated(keep=False)]
+                    if not duplicate_skus.empty:
+                        unique_duplicates = duplicate_skus.unique()
+                        raise Exception(f"Duplicate SKUs found in upload: {', '.join(map(str, unique_duplicates))}. Each SKU must be unique.")
+                        
+            # Get existing SKUs from shop to skip already uploaded ones
+            existing_skus = set()
+            try:
+                # Get all existing listings to check SKUs
+                all_listings = []
+                offset = 0
+                limit = 100
+                
+                while True:
+                    response = self.api.get_shop_listings(shop_id, state='active', limit=limit, offset=offset)
+                    if response.get('results'):
+                        all_listings.extend(response['results'])
+                        if len(response['results']) < limit:
+                            break
+                        offset += limit
+                    else:
+                        break
+                        
+                # Extract SKUs from inventory for each listing
+                for listing in all_listings:
+                    try:
+                        inventory = self.api.get_listing_inventory(listing['listing_id'])
+                        if inventory and 'products' in inventory:
+                            for product in inventory['products']:
+                                if 'sku' in product and product['sku']:
+                                    existing_skus.add(str(product['sku']))
+                    except Exception as e:
+                        logger.debug(f"Could not fetch inventory for listing {listing['listing_id']}: {e}")
+                                
+                logger.info(f"Found {len(existing_skus)} existing SKUs in shop")
+                
+            except Exception as e:
+                logger.warning(f"Could not fetch existing SKUs: {e}")
+                
             # Ensure shipping profile exists
             shipping_profile_id = self._ensure_shipping_profile(shop_id)
             
@@ -65,6 +108,20 @@ class UploadService:
             
             for idx, (_, product) in enumerate(products.iterrows()):
                 try:
+                    # Check if SKU already exists
+                    product_sku = product.get('SKU') if pd.notna(product.get('SKU')) else None
+                    if product_sku and str(product_sku) in existing_skus:
+                        logger.info(f"Skipping product with existing SKU: {product_sku}")
+                        results.append({
+                            'success': True,
+                            'listing_id': None,
+                            'title': product['Title*'],
+                            'sku': product_sku,
+                            'status': '⏭️ Skipped (SKU exists)',
+                            'message': f"SKU {product_sku} already exists"
+                        })
+                        continue
+                        
                     # Update progress
                     if progress_callback:
                         progress_callback(idx, len(products), f"Uploading {product['Title*']}")
