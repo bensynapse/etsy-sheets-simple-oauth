@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 15px;
+      margin: 0;
+    }
+    
+    h3 {
+      margin-top: 0;
+      color: #333;
+    }
+    
+    .section {
+      background: #f5f5f5;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+    }
+    
+    input[type="text"], input[type="password"], input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+    }
+    
+    button {
+      background-color: #F1641E;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      width: 100%;
+      margin: 5px 0;
+    }
+    
+    button:hover {
+      background-color: #d14a0a;
+    }
+    
+    .secondary {
+      background-color: #666;
+    }
+    
+    .secondary:hover {
+      background-color: #555;
+    }
+    
+    #status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 3px;
+      display: none;
+    }
+    
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    
+    .small {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    
+    hr {
+      margin: 20px 0;
+      border: none;
+      border-top: 1px solid #ddd;
+    }
+    
+    .results {
+      max-height: 200px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h3>Etsy API Tester</h3>
+  
+  <div class="section">
+    <strong>API Configuration</strong>
+    <input type="password" id="apiKey" placeholder="Enter your Etsy API Key">
+    <button onclick="saveApiKey()">Save API Key</button>
+    <button onclick="testConnection()" class="secondary">Test Connection</button>
+  </div>
+  
+  <div class="section">
+    <strong>Get Shop Info</strong>
+    <input type="text" id="shopId" placeholder="Enter Shop ID (e.g., 12345678)">
+    <button onclick="getShopInfo()">Get Shop Info</button>
+    <button onclick="importShop()" class="secondary">Import to Sheet</button>
+  </div>
+  
+  <div class="section">
+    <strong>Get Listings</strong>
+    <input type="text" id="listingsShopId" placeholder="Shop ID">
+    <input type="number" id="listingsLimit" placeholder="Limit (default: 10)" value="10">
+    <button onclick="getListings()">Get Listings</button>
+    <button onclick="importListings()" class="secondary">Import to Sheet</button>
+  </div>
+  
+  <div class="section">
+    <strong>Search Listings</strong>
+    <input type="text" id="searchKeywords" placeholder="Search keywords">
+    <button onclick="searchListings()">Search</button>
+  </div>
+  
+  <div class="section">
+    <strong>Get Categories</strong>
+    <button onclick="getTaxonomy()">Get Taxonomy</button>
+  </div>
+  
+  <hr>
+  
+  <button onclick="clearLogs()" class="secondary">Clear Logs</button>
+  
+  <div id="status"></div>
+  <div id="results" class="results" style="display:none;">
+    <strong>Results:</strong>
+    <pre id="resultsContent"></pre>
+  </div>
+  
+  <script>
+    // Check if API key exists on load
+    google.script.run.withSuccessHandler(function(result) {
+      if (result.hasKey) {
+        document.getElementById('apiKey').value = '••••••••';
+      }
+    }).getApiKeyStatus();
+    
+    function showStatus(message, type) {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = type;
+      status.style.display = 'block';
+      
+      if (type !== 'info') {
+        setTimeout(() => {
+          status.style.display = 'none';
+        }, 5000);
+      }
+    }
+    
+    function showResults(data) {
+      const resultsDiv = document.getElementById('results');
+      const resultsContent = document.getElementById('resultsContent');
+      resultsContent.textContent = JSON.stringify(data, null, 2);
+      resultsDiv.style.display = 'block';
+    }
+    
+    function saveApiKey() {
+      const apiKey = document.getElementById('apiKey').value;
+      if (!apiKey || apiKey === '••••••••') {
+        showStatus('Please enter a valid API key', 'error');
+        return;
+      }
+      
+      showStatus('Saving...', 'info');
+      google.script.run
+        .withSuccessHandler(() => {
+          showStatus('API key saved!', 'success');
+          document.getElementById('apiKey').value = '••••••••';
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .saveApiKey(apiKey);
+    }
+    
+    function testConnection() {
+      showStatus('Testing connection...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showStatus(result.message, 'success');
+          } else {
+            showStatus(result.error, 'error');
+          }
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .testConnection();
+    }
+    
+    function getShopInfo() {
+      const shopId = document.getElementById('shopId').value;
+      if (!shopId) {
+        showStatus('Please enter a shop ID', 'error');
+        return;
+      }
+      
+      showStatus('Getting shop info...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showStatus('Shop info retrieved!', 'success');
+            showResults(result.data);
+          } else {
+            showStatus(result.error, 'error');
+          }
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .getShop(shopId);
+    }
+    
+    function importShop() {
+      const shopId = document.getElementById('shopId').value;
+      if (!shopId) {
+        showStatus('Please enter a shop ID', 'error');
+        return;
+      }
+      
+      showStatus('Importing shop data...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          showStatus(result.message, 'success');
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .importShopToSheet(shopId);
+    }
+    
+    function getListings() {
+      const shopId = document.getElementById('listingsShopId').value;
+      const limit = document.getElementById('listingsLimit').value || 10;
+      
+      if (!shopId) {
+        showStatus('Please enter a shop ID', 'error');
+        return;
+      }
+      
+      showStatus('Getting listings...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showStatus(`Found ${result.data.count} listings`, 'success');
+            showResults(result.data);
+          } else {
+            showStatus(result.error, 'error');
+          }
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .getListingsByShop(shopId, parseInt(limit));
+    }
+    
+    function importListings() {
+      const shopId = document.getElementById('listingsShopId').value;
+      if (!shopId) {
+        showStatus('Please enter a shop ID', 'error');
+        return;
+      }
+      
+      showStatus('Importing listings...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          showStatus(result.message, 'success');
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .importListingsToSheet(shopId);
+    }
+    
+    function searchListings() {
+      const keywords = document.getElementById('searchKeywords').value;
+      if (!keywords) {
+        showStatus('Please enter search keywords', 'error');
+        return;
+      }
+      
+      showStatus('Searching...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showStatus(`Found ${result.data.count} listings`, 'success');
+            showResults(result.data);
+          } else {
+            showStatus(result.error, 'error');
+          }
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .searchListings(keywords, 10);
+    }
+    
+    function getTaxonomy() {
+      showStatus('Getting categories...', 'info');
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showStatus(`Found ${result.data.count} categories`, 'success');
+            showResults(result.data);
+          } else {
+            showStatus(result.error, 'error');
+          }
+        })
+        .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+        .getTaxonomy();
+    }
+    
+    function clearLogs() {
+      if (confirm('Clear all logs?')) {
+        google.script.run
+          .withSuccessHandler((result) => {
+            showStatus(result.message, 'success');
+          })
+          .withFailureHandler((error) => showStatus(error.toString(), 'error'))
+          .clearLogs();
+      }
+    }
+  </script>
+</body>
+</html>

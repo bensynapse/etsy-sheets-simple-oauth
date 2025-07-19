@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 15px;
+        font-size: 14px;
+      }
+      
+      h3 {
+        color: #1F2937;
+        margin-top: 20px;
+        margin-bottom: 10px;
+      }
+      
+      .form-group {
+        margin-bottom: 15px;
+      }
+      
+      label {
+        display: block;
+        margin-bottom: 5px;
+        color: #374151;
+        font-weight: 500;
+      }
+      
+      input[type="text"],
+      input[type="password"],
+      input[type="number"],
+      select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #D1D5DB;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      
+      input[type="checkbox"] {
+        margin-right: 5px;
+      }
+      
+      button {
+        background-color: #F1641E;
+        color: white;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-top: 10px;
+        width: 100%;
+      }
+      
+      button:hover {
+        background-color: #DC5A1B;
+      }
+      
+      .secondary-button {
+        background-color: #6B7280;
+        margin-top: 5px;
+      }
+      
+      .secondary-button:hover {
+        background-color: #4B5563;
+      }
+      
+      .success {
+        color: #059669;
+        margin-top: 10px;
+      }
+      
+      .error {
+        color: #DC2626;
+        margin-top: 10px;
+      }
+      
+      .info {
+        background-color: #F3F4F6;
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: #6B7280;
+      }
+      
+      .status-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 5px;
+      }
+      
+      .status-connected {
+        background-color: #10B981;
+      }
+      
+      .status-disconnected {
+        background-color: #EF4444;
+      }
+      
+      hr {
+        margin: 20px 0;
+        border: none;
+        border-top: 1px solid #E5E7EB;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>API Configuration</h3>
+    
+    <div class="form-group">
+      <label for="apiKey">API Key</label>
+      <input type="password" id="apiKey" placeholder="Enter your Etsy API key">
+      <button onclick="saveApiKey()">Save API Key</button>
+    </div>
+    
+    <div class="form-group">
+      <label>Connection Status</label>
+      <div id="connectionStatus">
+        <span class="status-indicator status-disconnected"></span>
+        <span id="statusText">Not Connected</span>
+      </div>
+      <button onclick="testConnection()">Test Connection</button>
+    </div>
+    
+    <hr>
+    
+    <h3>OAuth Configuration</h3>
+    
+    <div class="form-group">
+      <label for="clientId">Client ID</label>
+      <input type="text" id="clientId" placeholder="Your Etsy App Client ID">
+    </div>
+    
+    <div class="form-group">
+      <label for="redirectUri">Redirect URI</label>
+      <input type="text" id="redirectUri" readonly>
+      <div class="info">
+        Copy this URI to your Etsy App settings
+      </div>
+    </div>
+    
+    <button onclick="saveOAuthSettings()">Save OAuth Settings</button>
+    <button class="secondary-button" onclick="connectToEtsy()">Connect to Etsy</button>
+    
+    <hr>
+    
+    <h3>Import Settings</h3>
+    
+    <div class="form-group">
+      <label>
+        <input type="checkbox" id="autoRefresh">
+        Enable Auto-refresh
+      </label>
+    </div>
+    
+    <div class="form-group">
+      <label for="refreshRate">Refresh Rate (minutes)</label>
+      <input type="number" id="refreshRate" min="5" max="60" value="15">
+    </div>
+    
+    <div class="form-group">
+      <label for="maxRecords">Max Records to Import</label>
+      <input type="number" id="maxRecords" min="1" max="1000" value="100">
+    </div>
+    
+    <button onclick="saveImportSettings()">Save Import Settings</button>
+    
+    <hr>
+    
+    <h3>Actions</h3>
+    
+    <button onclick="importAllData()">Import All Data</button>
+    <button class="secondary-button" onclick="clearAllData()">Clear All Data</button>
+    <button class="secondary-button" onclick="createBackup()">Create Backup</button>
+    
+    <div id="message"></div>
+    
+    <script>
+      // Load current settings
+      google.script.run.withSuccessHandler(loadSettings).getSettings();
+      
+      function loadSettings(settings) {
+        document.getElementById('apiKey').value = settings.apiKey ? '••••••••' : '';
+        document.getElementById('clientId').value = settings.clientId || '';
+        document.getElementById('redirectUri').value = settings.redirectUri || '';
+        document.getElementById('autoRefresh').checked = settings.autoRefresh;
+        document.getElementById('refreshRate').value = settings.refreshRate || 15;
+        document.getElementById('maxRecords').value = settings.maxRecords || 100;
+        
+        updateConnectionStatus(settings.isConnected);
+      }
+      
+      function updateConnectionStatus(isConnected) {
+        const indicator = document.querySelector('.status-indicator');
+        const statusText = document.getElementById('statusText');
+        
+        if (isConnected) {
+          indicator.classList.remove('status-disconnected');
+          indicator.classList.add('status-connected');
+          statusText.textContent = 'Connected';
+        } else {
+          indicator.classList.remove('status-connected');
+          indicator.classList.add('status-disconnected');
+          statusText.textContent = 'Not Connected';
+        }
+      }
+      
+      function saveApiKey() {
+        const apiKey = document.getElementById('apiKey').value;
+        if (!apiKey || apiKey === '••••••••') {
+          showMessage('Please enter a valid API key', 'error');
+          return;
+        }
+        
+        google.script.run
+          .withSuccessHandler(() => showMessage('API key saved successfully', 'success'))
+          .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+          .saveApiKey(apiKey);
+      }
+      
+      function saveOAuthSettings() {
+        const clientId = document.getElementById('clientId').value;
+        
+        if (!clientId) {
+          showMessage('Please enter your Client ID', 'error');
+          return;
+        }
+        
+        google.script.run
+          .withSuccessHandler(() => showMessage('OAuth settings saved', 'success'))
+          .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+          .saveOAuthSettings(clientId);
+      }
+      
+      function saveImportSettings() {
+        const settings = {
+          autoRefresh: document.getElementById('autoRefresh').checked,
+          refreshRate: parseInt(document.getElementById('refreshRate').value),
+          maxRecords: parseInt(document.getElementById('maxRecords').value)
+        };
+        
+        google.script.run
+          .withSuccessHandler(() => showMessage('Import settings saved', 'success'))
+          .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+          .saveImportSettings(settings);
+      }
+      
+      function testConnection() {
+        showMessage('Testing connection...', 'info');
+        
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (result.success) {
+              showMessage('Connection successful!', 'success');
+              updateConnectionStatus(true);
+            } else {
+              showMessage('Connection failed: ' + result.error, 'error');
+              updateConnectionStatus(false);
+            }
+          })
+          .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+          .testConnection();
+      }
+      
+      function connectToEtsy() {
+        google.script.run.startOAuthFlow();
+        google.script.host.close();
+      }
+      
+      function importAllData() {
+        if (confirm('This will import all data from Etsy. Continue?')) {
+          showMessage('Importing data...', 'info');
+          google.script.run
+            .withSuccessHandler(() => showMessage('Data imported successfully', 'success'))
+            .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+            .importAllData();
+        }
+      }
+      
+      function clearAllData() {
+        if (confirm('This will clear all imported data. Are you sure?')) {
+          google.script.run
+            .withSuccessHandler(() => showMessage('Data cleared', 'success'))
+            .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+            .clearAllImportedData();
+        }
+      }
+      
+      function createBackup() {
+        showMessage('Creating backup...', 'info');
+        google.script.run
+          .withSuccessHandler((url) => {
+            showMessage(`Backup created: <a href="${url}" target="_blank">View backup</a>`, 'success');
+          })
+          .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+          .createDataBackup();
+      }
+      
+      function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.className = type;
+        messageDiv.innerHTML = text;
+        
+        if (type !== 'info') {
+          setTimeout(() => {
+            messageDiv.innerHTML = '';
+          }, 5000);
+        }
+      }
+    </script>
+  </body>
+</html>
