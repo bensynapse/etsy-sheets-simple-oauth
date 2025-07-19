@@ -100,7 +100,15 @@ class UploadService:
                         'success': True,
                         'title': product['Title*'],
                         'listing_id': listing['listing_id'],
-                        'status': status
+                        'price': float(product['Price*']),
+                        'quantity': int(product['Quantity*']),
+                        'sku': product.get('SKU', ''),
+                        'description': product['Description*'][:100] + '...' if len(product['Description*']) > 100 else product['Description*'],
+                        'tags': product.get('Tags (comma separated)', ''),
+                        'materials': product.get('Materials (comma separated)', ''),
+                        'images_uploaded': images_uploaded,
+                        'status': status,
+                        'delete': False  # For marking deletion
                     })
                     
                 except Exception as error:

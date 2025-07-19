@@ -146,9 +146,11 @@ class ListingService:
                     if product.get('offerings'):
                         for offering in product['offerings']:
                             if 'quantity' in updates:
-                                offering['quantity'] = updates['quantity']
+                                # Convert numpy int64 to regular int
+                                offering['quantity'] = int(updates['quantity'])
                             if 'price' in updates:
                                 # IMPORTANT: Price must be float, not object
+                                # Convert numpy float64 to regular float
                                 offering['price'] = float(updates['price'])
                                 
             # Clean inventory for update

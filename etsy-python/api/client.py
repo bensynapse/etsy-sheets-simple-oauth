@@ -6,12 +6,26 @@ Handles requests, rate limiting, and error handling.
 import requests
 import time
 import json
+import numpy as np
 from typing import Dict, Optional, Any, Union
 from urllib.parse import urlencode, quote
 import logging
 from auth.token_manager import TokenManager
 
 logger = logging.getLogger(__name__)
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle numpy types."""
+    
+    def default(self, obj):
+        if isinstance(obj, (np.integer, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 
 class EtsyAPIClient:
@@ -138,7 +152,7 @@ class EtsyAPIClient:
         if json_data:
             # JSON request
             headers['Content-Type'] = 'application/json'
-            kwargs['data'] = json.dumps(json_data)
+            kwargs['data'] = json.dumps(json_data, cls=NumpyEncoder)
         elif files:
             # Multipart form data (don't set Content-Type)
             kwargs['files'] = files
