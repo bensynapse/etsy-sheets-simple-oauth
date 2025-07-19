@@ -159,14 +159,14 @@ class EtsyShopManager:
         with col1:
             if st.session_state.authenticated:
                 st.success("✅ **Connected to Etsy**")
-                # Show user info if available
-                try:
-                    user_info = self.shop_service.get_user_info()
-                    if user_info.get('success'):
-                        user = user_info.get('user', {})
-                        st.caption(f"User: {user.get('login_name', 'Unknown')}")
-                except:
-                    pass
+                # Load shop info if not already loaded
+                if 'shop_info' not in st.session_state:
+                    try:
+                        result = self.shop_service.import_shop_data()
+                        if result['success'] and 'data' in result:
+                            st.session_state.shop_info = result['data']
+                    except:
+                        pass
             else:
                 st.error("❌ **Not Connected**")
                 
@@ -198,11 +198,18 @@ class EtsyShopManager:
                     self.shop_service.clear_auth()
                     st.session_state.authenticated = False
                     st.session_state.uploaded_products = pd.DataFrame()
+                    # Clear shop info
+                    if 'shop_info' in st.session_state:
+                        del st.session_state.shop_info
                     st.rerun()
                     
         # OAuth flow (if needed)
         if getattr(st.session_state, 'show_oauth', False) and not st.session_state.authenticated:
             self._show_oauth_flow()
+            
+        # Show shop info if connected
+        if st.session_state.authenticated and 'shop_info' in st.session_state:
+            self._show_shop_info()
             
     def _show_oauth_flow(self):
         """Show OAuth authorization flow."""
@@ -258,6 +265,8 @@ class EtsyShopManager:
                         # Clear OAuth data
                         if 'oauth_auth_data' in st.session_state:
                             del st.session_state.oauth_auth_data
+                        # Initialize API to load shop info
+                        self._initialize_api()
                         time.sleep(1)
                         st.rerun()
                         
@@ -265,6 +274,32 @@ class EtsyShopManager:
                         st.error(f"Error: {str(e)}")
                 else:
                     st.error("Please paste the redirect URL")
+                    
+    def _show_shop_info(self):
+        """Display shop information in a nice info box."""
+        shop_df = st.session_state.shop_info
+        
+        # Extract key values from the DataFrame
+        shop_values = {}
+        for _, row in shop_df.iterrows():
+            if 'Field' in row and 'Value' in row and row['Field'] and row['Value']:
+                shop_values[row['Field']] = row['Value']
+        
+        # Create compact info box
+        info_parts = []
+        if 'Shop Name' in shop_values:
+            info_parts.append(f"🏪 **{shop_values['Shop Name']}**")
+        if 'Shop ID' in shop_values:
+            info_parts.append(f"ID: {shop_values['Shop ID']}")
+        if 'Currency' in shop_values:
+            info_parts.append(f"💰 {shop_values['Currency']}")
+        if 'Active Listings' in shop_values:
+            info_parts.append(f"📦 {shop_values['Active Listings']} listings")
+        if 'Created' in shop_values:
+            info_parts.append(f"Since {shop_values['Created']}")
+            
+        if info_parts:
+            st.info(" | ".join(info_parts))
                     
     def _show_operations_section(self):
         """Show main operations buttons."""
@@ -291,6 +326,44 @@ class EtsyShopManager:
                         result = self.listing_service.import_listings()
                         if result['success']:
                             st.success(result['message'])
+                            # Store imported listings in session state
+                            if 'data' in result and not result['data'].empty:
+                                # Convert imported listings to match uploaded products format
+                                imported_df = result['data'].copy()
+                                imported_df['source'] = 'Import'
+                                imported_df['delete'] = False
+                                # Rename columns to match
+                                imported_df = imported_df.rename(columns={
+                                    'Listing ID': 'listing_id',
+                                    'Title': 'title',
+                                    'Price': 'price',
+                                    'Quantity': 'quantity',
+                                    'Status': 'status'
+                                })
+                                # Add missing columns
+                                if 'sku' not in imported_df.columns:
+                                    imported_df['sku'] = ''
+                                
+                                # Store or append to existing products
+                                if 'uploaded_products' not in st.session_state or st.session_state.uploaded_products.empty:
+                                    st.session_state.uploaded_products = imported_df
+                                else:
+                                    # Remove duplicates - keep imported version if listing_id already exists
+                                    existing_df = st.session_state.uploaded_products
+                                    existing_ids = set(existing_df['listing_id'].tolist())
+                                    imported_ids = set(imported_df['listing_id'].tolist())
+                                    
+                                    # Remove duplicates from existing
+                                    duplicate_ids = existing_ids.intersection(imported_ids)
+                                    if duplicate_ids:
+                                        existing_df = existing_df[~existing_df['listing_id'].isin(duplicate_ids)]
+                                    
+                                    # Merge
+                                    st.session_state.uploaded_products = pd.concat([
+                                        existing_df,
+                                        imported_df
+                                    ], ignore_index=True)
+                                st.rerun()
                         else:
                             st.error(result['message'])
                     except Exception as e:
@@ -352,9 +425,11 @@ class EtsyShopManager:
                     # Save results to session state
                     if result.get('results'):
                         results_df = pd.DataFrame(result['results'])
-                        successful_df = results_df[results_df['success'] == True]
+                        successful_df = results_df[results_df['success'] == True].copy()
                         
                         if not successful_df.empty:
+                            # Add source column to indicate these are uploaded
+                            successful_df['source'] = 'Upload'
                             # Store ALL columns for editing
                             st.session_state.uploaded_products = successful_df.reset_index(drop=True)
                             st.rerun()  # Refresh to show the editable table
@@ -368,7 +443,17 @@ class EtsyShopManager:
             
     def _show_editable_products(self):
         """Show the editable product table."""
-        st.subheader(f"📝 Manage {len(st.session_state.uploaded_products)} Products")
+        df = st.session_state.uploaded_products
+        
+        # Count by source
+        source_counts = df['source'].value_counts() if 'source' in df.columns else {}
+        title_parts = []
+        if 'Upload' in source_counts:
+            title_parts.append(f"{source_counts['Upload']} Uploaded")
+        if 'Import' in source_counts:
+            title_parts.append(f"{source_counts['Import']} Imported")
+            
+        st.subheader(f"📝 Manage {len(df)} Products ({', '.join(title_parts)})")
         
         # Instructions
         st.info("💡 **Click any cell** to edit Price or Quantity. Check 'delete' box to mark for deletion.")
@@ -383,7 +468,7 @@ class EtsyShopManager:
         # Configure which columns are editable
         column_config = {
             "listing_id": st.column_config.NumberColumn("Listing ID", disabled=True),
-            "title": st.column_config.TextColumn("Title", disabled=True),
+            "title": st.column_config.TextColumn("Title", disabled=True, width="large"),
             "price": st.column_config.NumberColumn(
                 "Price", 
                 min_value=0.01,
@@ -398,6 +483,7 @@ class EtsyShopManager:
             ),
             "sku": st.column_config.TextColumn("SKU", disabled=True),
             "status": st.column_config.TextColumn("Status", disabled=True),
+            "source": st.column_config.TextColumn("Source", disabled=True),
             "delete": st.column_config.CheckboxColumn(
                 "Delete?",
                 help="Check to mark for deletion"
