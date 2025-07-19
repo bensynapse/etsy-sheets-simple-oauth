@@ -154,7 +154,7 @@ class EtsyShopManager:
         
     def _show_auth_section(self):
         """Show authentication section at top of page."""
-        col1, col2, col3 = st.columns([2, 2, 1])
+        col1, col2 = st.columns([1, 1])
         
         with col1:
             if st.session_state.authenticated:
@@ -191,17 +191,6 @@ class EtsyShopManager:
                 # OAuth connection
                 if st.button("🔗 Connect to Etsy"):
                     st.session_state.show_oauth = True
-                    
-        with col3:
-            if st.session_state.authenticated:
-                if st.button("🔌 Disconnect"):
-                    self.shop_service.clear_auth()
-                    st.session_state.authenticated = False
-                    st.session_state.uploaded_products = pd.DataFrame()
-                    # Clear shop info
-                    if 'shop_info' in st.session_state:
-                        del st.session_state.shop_info
-                    st.rerun()
                     
         # OAuth flow (if needed)
         if getattr(st.session_state, 'show_oauth', False) and not st.session_state.authenticated:
@@ -285,7 +274,7 @@ class EtsyShopManager:
             if 'Field' in row and 'Value' in row and row['Field'] and row['Value']:
                 shop_values[row['Field']] = row['Value']
         
-        # Create compact info box
+        # Create compact info box with disconnect button
         info_parts = []
         if 'Shop Name' in shop_values:
             info_parts.append(f"🏪 **{shop_values['Shop Name']}**")
@@ -299,7 +288,18 @@ class EtsyShopManager:
             info_parts.append(f"Since {shop_values['Created']}")
             
         if info_parts:
-            st.info(" | ".join(info_parts))
+            col_info, col_disconnect = st.columns([5, 1])
+            with col_info:
+                st.info(" | ".join(info_parts))
+            with col_disconnect:
+                if st.button("🔌 Disconnect", use_container_width=True):
+                    self.shop_service.clear_auth()
+                    st.session_state.authenticated = False
+                    st.session_state.uploaded_products = pd.DataFrame()
+                    # Clear shop info
+                    if 'shop_info' in st.session_state:
+                        del st.session_state.shop_info
+                    st.rerun()
                     
     def _show_operations_section(self):
         """Show main operations buttons."""
@@ -465,6 +465,12 @@ class EtsyShopManager:
         if 'delete' not in df.columns:
             df['delete'] = False
             
+        # Add product link column
+        if 'listing_id' in df.columns:
+            df['view_link'] = df['listing_id'].apply(
+                lambda x: f'https://www.etsy.com/listing/{int(x)}' if pd.notna(x) and x else ''
+            )
+            
         # Configure which columns are editable
         column_config = {
             "listing_id": st.column_config.NumberColumn("Listing ID", disabled=True),
@@ -487,6 +493,11 @@ class EtsyShopManager:
             "delete": st.column_config.CheckboxColumn(
                 "Delete?",
                 help="Check to mark for deletion"
+            ),
+            "view_link": st.column_config.LinkColumn(
+                "View",
+                help="Click to view listing on Etsy",
+                display_text="View →"
             )
         }
         
