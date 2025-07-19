@@ -1,0 +1,18 @@
+# Core dependencies
+streamlit>=1.28.0
+pandas>=2.1.0
+openpyxl>=3.1.2  # Excel file support
+requests>=2.31.0
+python-dotenv>=1.0.0
+cryptography>=41.0.7
+
+# Development dependencies
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+black>=23.10.0
+flake8>=6.1.0
+mypy>=1.6.1
+
+# Type stubs
+types-requests>=2.31.0
+pandas-stubs>=2.1.0
