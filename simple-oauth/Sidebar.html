@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 15px;
+      margin: 0;
+      font-size: 14px;
+    }
+    
+    h3 {
+      margin-top: 0;
+      color: #333;
+    }
+    
+    .section {
+      background: #f5f5f5;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+    }
+    
+    .status {
+      padding: 10px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+    
+    .connected {
+      background: #d4edda;
+      color: #155724;
+    }
+    
+    .disconnected {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+    }
+    
+    button {
+      background-color: #F1641E;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      width: 100%;
+      margin: 5px 0;
+      font-size: 14px;
+    }
+    
+    button:hover {
+      background-color: #d14a0a;
+    }
+    
+    .secondary {
+      background-color: #666;
+    }
+    
+    .success {
+      background-color: #28a745;
+    }
+    
+    #message {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 3px;
+      display: none;
+    }
+    
+    .message-success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .message-error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .message-info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    
+    .step {
+      display: none;
+    }
+    
+    .step.active {
+      display: block;
+    }
+    
+    .small {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    
+    .code-input {
+      font-family: monospace;
+      font-size: 16px;
+      text-align: center;
+    }
+    
+    hr {
+      margin: 20px 0;
+      border: none;
+      border-top: 1px solid #ddd;
+    }
+  </style>
+</head>
+<body>
+  <h3>Etsy API Control Panel</h3>
+  
+  <div id="status" class="status disconnected">
+    Checking connection...
+  </div>
+  
+  <!-- Step 1: API Credentials -->
+  <div id="step1" class="step active">
+    <div class="section">
+      <strong>Step 1: API Credentials</strong>
+      <p class="small">Get these from your Etsy App at developers.etsy.com</p>
+      
+      <input type="password" id="apiKey" placeholder="API Key (Keystring)">
+      <p class="small">Note: For Etsy v3, your API Key is also your Client ID</p>
+      <button onclick="saveCredentials()">Save API Key</button>
+    </div>
+  </div>
+  
+  <!-- Step 2: OAuth Connection -->
+  <div id="step2" class="step">
+    <div class="section">
+      <strong>Step 2: Connect to Etsy</strong>
+      <p class="small">Click below to authorize this app</p>
+      
+      <button onclick="startOAuth()">Connect to Etsy</button>
+      
+      <div id="authSection" style="display:none; margin-top: 15px;">
+        <p class="small">After authorizing, copy the code from the URL (after code=) and paste here:</p>
+        <input type="text" id="authCode" placeholder="Paste authorization code" class="code-input">
+        <button onclick="submitCode()">Submit Code</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Step 3: Import Data -->
+  <div id="step3" class="step">
+    <div class="section">
+      <strong>Connected User</strong>
+      <div id="userInfo" class="small" style="margin-bottom: 15px;"></div>
+      
+      <strong>Import Your Shop Data</strong>
+      <button onclick="importShop()">Import My Shop</button>
+      <button onclick="importListings()">Import My Listings</button>
+      <button onclick="importOrders()">Import My Orders</button>
+      
+      <hr>
+      
+      <strong>Import Any Shop (by ID)</strong>
+      <input type="text" id="anyShopId" placeholder="Enter any shop ID">
+      <button onclick="importAnyShop()">Import Shop Info</button>
+      
+      <hr>
+      
+      <strong>Product Upload</strong>
+      <button onclick="createTemplate()">Create Upload Template</button>
+      <button onclick="uploadProducts()" class="success">Upload Products</button>
+      <button onclick="updateInventoryAndPrice()" class="secondary">Update Price & Inventory</button>
+      <button onclick="deleteMarkedListings()" class="secondary" style="background-color: #dc3545;">Delete Marked Listings</button>
+      
+      <div id="uploadProgress" style="display:none; margin-top: 10px;">
+        <div class="small">
+          Status: <span id="progressText">0/0 completed</span>
+        </div>
+        <div style="width: 100%; background-color: #e0e0e0; border-radius: 4px; margin-top: 5px;">
+          <div id="progressBar" style="width: 0%; background-color: #4CAF50; height: 20px; border-radius: 4px; transition: width 0.3s;"></div>
+        </div>
+        <div id="uploadResults" class="small" style="margin-top: 10px;"></div>
+      </div>
+      
+      <hr>
+      
+      <button onclick="disconnect()" class="secondary">Disconnect</button>
+    </div>
+  </div>
+  
+  <div id="message"></div>
+  
+  <script>
+    // Check status on load
+    checkStatus();
+    
+    function checkStatus() {
+      google.script.run
+        .withSuccessHandler(updateUI)
+        .withFailureHandler(() => showMessage('Error checking status', 'error'))
+        .getStatus();
+    }
+    
+    function updateUI(status) {
+      const statusDiv = document.getElementById('status');
+      
+      if (status.isAuthenticated) {
+        statusDiv.className = 'status connected';
+        statusDiv.textContent = '✓ Connected to Etsy';
+        showStep(3);
+        
+        // Get user info
+        google.script.run
+          .withSuccessHandler((result) => {
+            if (result.success) {
+              const userDiv = document.getElementById('userInfo');
+              let userInfo = `User ID: ${result.user.user_id}<br>`;
+              if (result.user.login_name !== 'Not available') {
+                userInfo = `Logged in as: <strong>${result.user.login_name}</strong><br>` + userInfo;
+              }
+              if (result.user.email !== 'Not available') {
+                userInfo += `Email: ${result.user.email}<br>`;
+              }
+              userInfo += `Seller Account: ${result.user.is_seller ? 'Yes' : 'No'}<br>`;
+              if (result.user.shop_name) {
+                userInfo += `Shop: <strong>${result.user.shop_name}</strong> (ID: ${result.user.shop_id})`;
+              }
+              userDiv.innerHTML = userInfo;
+            }
+          })
+          .getUserInfo();
+      } else if (status.hasApiKey && status.hasClientId) {
+        statusDiv.className = 'status disconnected';
+        statusDiv.textContent = '○ Not connected - Please authorize';
+        showStep(2);
+      } else {
+        statusDiv.className = 'status disconnected';
+        statusDiv.textContent = '○ Not connected - Add credentials';
+        showStep(1);
+        
+        // Pre-fill if already saved
+        if (status.hasApiKey) document.getElementById('apiKey').value = '••••••••';
+      }
+    }
+    
+    function showStep(num) {
+      document.querySelectorAll('.step').forEach(step => {
+        step.classList.remove('active');
+      });
+      document.getElementById('step' + num).classList.add('active');
+    }
+    
+    function showMessage(text, type) {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      msg.className = 'message-' + type;
+      msg.style.display = 'block';
+      
+      if (type !== 'info') {
+        setTimeout(() => {
+          msg.style.display = 'none';
+        }, 5000);
+      }
+    }
+    
+    function saveCredentials() {
+      const apiKey = document.getElementById('apiKey').value;
+      
+      if (!apiKey || apiKey === '••••••••') {
+        showMessage('Please enter your API Key', 'error');
+        return;
+      }
+      
+      showMessage('Saving...', 'info');
+      
+      google.script.run
+        .withSuccessHandler(() => {
+          showMessage('Credentials saved!', 'success');
+          checkStatus();
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .saveCredentials(apiKey, apiKey); // Use API key as both API key and client ID
+    }
+    
+    function startOAuth() {
+      showMessage('Getting authorization URL...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          window.open(result.url, '_blank');
+          document.getElementById('authSection').style.display = 'block';
+          showMessage('Complete authorization in the new window, then paste the code below', 'info');
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .getAuthUrl();
+    }
+    
+    function submitCode() {
+      const code = document.getElementById('authCode').value;
+      if (!code) {
+        showMessage('Please paste the authorization code', 'error');
+        return;
+      }
+      
+      showMessage('Exchanging code for token...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          showMessage(result.message, 'success');
+          document.getElementById('authCode').value = '';
+          document.getElementById('authSection').style.display = 'none';
+          checkStatus();
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .exchangeCodeForToken(code);
+    }
+    
+    function importShop() {
+      showMessage('Importing shop data...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message, 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .importShopData();
+    }
+    
+    function importListings() {
+      showMessage('Importing listings...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message, 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .importListings();
+    }
+    
+    function importOrders() {
+      showMessage('Importing orders...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message, 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .importOrders();
+    }
+    
+    function importAnyShop() {
+      const shopId = document.getElementById('anyShopId').value;
+      if (!shopId) {
+        showMessage('Please enter a shop ID', 'error');
+        return;
+      }
+      
+      showMessage('Importing shop data...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message, 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .importAnyShopData(shopId);
+    }
+    
+    function createTemplate() {
+      showMessage('Creating product template...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message + ' Check the "Product Upload" tab.', 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .createProductTemplate();
+    }
+    
+    function uploadProducts() {
+      if (!confirm('Upload all products from the Product Upload sheet? This may take several minutes.')) return;
+      
+      showMessage('Starting upload...', 'info');
+      document.getElementById('uploadProgress').style.display = 'block';
+      document.getElementById('uploadResults').innerHTML = '';
+      
+      // Start progress monitoring
+      const progressInterval = setInterval(updateProgress, 2000);
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          clearInterval(progressInterval);
+          updateProgress(); // Final update
+          
+          if (result.success) {
+            document.getElementById('uploadResults').innerHTML = `
+              <strong style="color: #28a745;">Upload Complete!</strong><br>
+              Total: ${result.total}<br>
+              <span style="color: #28a745;">✓ Successful: ${result.successful}</span><br>
+              ${result.failed > 0 ? '<span style="color: #dc3545;">✗ Failed: ' + result.failed + '</span>' : ''}
+            `;
+            showMessage('Upload completed! Check the sheet for details.', 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => {
+          clearInterval(progressInterval);
+          showMessage(error.toString(), 'error');
+        })
+        .uploadProducts();
+    }
+    
+    function updateProgress() {
+      google.script.run
+        .withSuccessHandler((progress) => {
+          const percent = progress.total > 0 ? 
+            Math.round((progress.completed + progress.failed) / progress.total * 100) : 0;
+          
+          document.getElementById('progressText').textContent = 
+            `${progress.completed}/${progress.total} completed${progress.failed > 0 ? ', ' + progress.failed + ' failed' : ''}`;
+          document.getElementById('progressBar').style.width = percent + '%';
+          
+          if (progress.failed > 0) {
+            document.getElementById('progressBar').style.backgroundColor = '#ffc107'; // Yellow if any failed
+          }
+        })
+        .getUploadProgress();
+    }
+    
+    function updateInventoryAndPrice() {
+      if (!confirm('Update price and inventory for all uploaded products? This will use the values currently in the Product Upload sheet.')) return;
+      
+      showMessage('Updating inventory and prices...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message, 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .updateInventoryAndPrice();
+    }
+    
+    function deleteMarkedListings() {
+      if (!confirm('Delete all listings marked with "X" in the Delete? column? This action cannot be undone!')) return;
+      
+      showMessage('Deleting marked listings...', 'info');
+      
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            showMessage(result.message, 'success');
+          } else {
+            showMessage(result.message, 'error');
+          }
+        })
+        .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+        .deleteMarkedListings();
+    }
+    
+    function disconnect() {
+      if (confirm('Are you sure you want to disconnect?')) {
+        google.script.run
+          .withSuccessHandler(() => {
+            showMessage('Disconnected', 'success');
+            checkStatus();
+          })
+          .withFailureHandler((error) => showMessage(error.toString(), 'error'))
+          .clearAuth();
+      }
+    }
+  </script>
+</body>
+</html>
